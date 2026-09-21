@@ -31,7 +31,7 @@ function! s:runner.init(session) abort
 endfunction
 
 function! s:runner.run(commands, input, session) abort
-  let command = join(a:commands, ' && ')
+  let command = s:make_command_line(a:commands)
   if a:input !=# ''
     let inputfile = a:session.tempname()
     call writefile(split(a:input, "\n", 1), inputfile, 'b')
@@ -54,10 +54,26 @@ function! s:runner.run(commands, input, session) abort
   " use termopen instead of term_start (neovim)
   let self._jobid = termopen(cmd_arg, options)
   let self._bufnr = bufnr('')
+  if s:is_win
+    let self._batfile = command
+  endif
   setlocal bufhidden=wipe
   if !self.config.into
     call win_gotoid(prev_winid)
   endif
+endfunction
+
+function! s:make_command_line(commands)
+  if !s:is_win
+    return join(a:commands, ' && ')
+  endif
+
+  let ext = '.cmd'
+  let cmd = ['@echo off' ] + copy(a:commands)
+  let bat = tempname() . '.cmd'
+  call map(cmd, 'iconv(substitute(v:val, "%", "%%", "g"), &encoding, "cp932") . "\r"')
+  call writefile(cmd, bat, '')
+  return bat
 endfunction
 
 function! s:runner.sweep() abort
@@ -78,6 +94,9 @@ function! s:runner._job_exit_cb(jobid, exit_status, event) abort
     call quickrun#session#call(self._key, 'finish', a:exit_status)
   else
     let self._job_exited = a:exit_status
+  endif
+  if has_key(self, '_batfile') && filereadable(self._batfile)
+    call delete(self._batfile)
   endif
 endfunction
 
